@@ -17,35 +17,44 @@ passport.use(new GitHubStrategy({
       // represent the logged-in user.  In a typical application, you would want
       // to associate the GitHub account with a user record in your database,
       // and return that user instead.
-      console.warn("successful auth");
-      return done(null, profile);
+      console.log("successful auth through Github");
+      return done(null, profile); // profile is properly completed
     });
   }
 ));
 
 exports.expressConfigure = function(hook_name, args, cb) {
-
   args.app.use(passport.initialize());
   args.app.use(passport.session());
 
   args.app.get('/auth/github', passport.authenticate('github'));
   args.app.get('/auth/callback', 
-    passport.authenticate('github', { failureRedirect: '/auth/github' }),
+    passport.authenticate('github', { failureRedirect: '/' }),
     function(req, res) {
       // Successful authentication, redirect home.
+      console.log("Redirecting back to home after succesful auth");
       res.redirect('/');
     }
   );
 
   args.app.use(function(req, res, next) {
-    if (req.path.match(/^\/(static|javascripts|pluginfw|locales|favicon|oauth|auth)/)) {
-      console.warn("straight through", req.path);
-      // Don't ask for github auth for static paths or for oauth url?
+    // Root URL doesn't need any Auth..
+    if (req.path === "/"){
       next();
+      return;
+    }
+
+    
+    // Don't ask for github auth for static paths etc.
+    if (req.path.match(/^\/(static|javascripts|pluginfw|locales|favicon|oauth|auth)/)) {
+      // console.log("straight through", req.path);
+      next();
+      return;
     } else {
-      console.error("not straight through", req.path);
+      console.log("Trying to access a pad", req.path);
+
       if(req.path.indexOf("/p") === 0){
-        console.warn("isAuth", req.isAuthenticated());
+        console.warn("isAuthenticated", req.isAuthenticated()); // Always returns false?!
         if (req.isAuthenticated()){ 
           console.warn("is authenticated!");
           return next(); 
@@ -54,6 +63,7 @@ exports.expressConfigure = function(hook_name, args, cb) {
           res.redirect('/auth/github');
         }
       }
+
     }
   });
 
@@ -67,9 +77,13 @@ exports.expressConfigure = function(hook_name, args, cb) {
 //   have a database of user records, the complete GitHub profile is serialized
 //   and deserialized.
 passport.serializeUser(function(user, done) {
+  console.log("serialized user", user);
   done(null, user);
 });
 
+
+// For some reason this is never fired!
 passport.deserializeUser(function(obj, done) {
+  console.log("deserialized user", user);
   done(null, obj);
 });
