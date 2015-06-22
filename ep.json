@@ -1,0 +1,10 @@
+{
+  "parts": [
+    {
+      "name": "ep_oauth",
+      "hooks": {
+        "expressConfigure" : "ep_oauth/auth:expressConfigure"
+      }
+    }
+  ]
+}
