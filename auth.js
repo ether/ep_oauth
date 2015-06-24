@@ -3,6 +3,7 @@ settings = require('../../src/node/utils/Settings');
 var cookieParser = require('ep_etherpad-lite/node_modules/cookie-parser');
 var session = require('ep_etherpad-lite/node_modules/express-session');
 var sessionStore = require('ep_etherpad-lite/node/db/SessionStore');
+var request = require('request');
 
 var OAuth2 = require('./node_modules/oauth/lib/oauth2').OAuth2;
 
@@ -40,13 +41,36 @@ exports.expressConfigure = function(hook_name, args, cb) {
         else {
           // Everything is all good, we have an access token for this user
           console.debug('Obtained access_token: ', access_token);
+
           var sessionID = req.query.state;
-          // We should store it against the user in the SessionManager
-          if(sessionID){
-            console.debug("Database Write -> ", sessionID, "---", access_token);
-            db.set("oauth:"+sessionID, access_token);
-            next(); // Go to final step
+
+          // CAKE TODO
+          // At the moment this is github specific..  This should be more "general.."
+
+          // Getting user details
+          var requestUrl = "https://api.github.com/user?access_token="+access_token;
+          var rOptions = {
+            url: requestUrl,
+            headers: {
+              'User-Agent': 'request'
+            }
           }
+          request(rOptions, function (error, response, body) {
+            if (!error && response.statusCode == 200) {
+              var user = JSON.parse(body);
+              var userBlob = {
+                "access_token": access_token,
+                "userInfo": user
+              }
+              console.log("Database Write -> ", sessionID, "---", userBlob);
+              db.set("oauth:"+sessionID, userBlob);
+            }else{
+              console.error(error, response, body);
+            }
+          });
+
+          next(); // Go to final step
+
         }
       })
     }else{
@@ -59,7 +83,11 @@ exports.expressConfigure = function(hook_name, args, cb) {
     // Read redirect lookup URL from database
     db.get("oauthredirectlookup:"+req.query.state, function(k, url){
       console.debug("Oauth redirect lookup record found", url);
-      res.redirect(url || "/"); // CAKE
+      // Send the user to the pad they were trying to access
+      // Note that we could lookup the user data and append it so suggest their name
+      // Or we might lookup this users UID in some form of permission table
+      // Either way we have that data and can get to it by db.get("oauth:"+req.query.state,...
+      res.redirect(url || "/");
     })
   });
 }
@@ -70,17 +98,17 @@ exports.authorize = function(hook_name, args, cb){
   if(args.req.url.indexOf("/auth") === 0) return cb[true];
 
   var userIsAuthedAlready = false;
-  console.debug("Database lookup -> oauth:"+args.req.sessionID);
-  db.get("oauth:"+args.req.sessionID, function(k, token){
-    console.debug("Oauth session found ->" + args.req.sessionID, "has token value of ", token);
-    if(token) userIsAuthedAlready = true;
+  console.log("Database lookup -> oauth:"+args.req.sessionID);
+  db.get("oauth:"+args.req.sessionID, function(k, user){
+    console.debug("Oauth session found ->" + args.req.sessionID, "has user data of ", user);
+    if(user) userIsAuthedAlready = true;
   });
   return cb([userIsAuthedAlready]);
 }
 
 // SECOND STEP
 exports.authenticate = function(hook_name, args, cb){
-  console.log("Database Write -> oauthredirectlookup:"+args.req.sessionId, "---", args.req.url);
+  console.log("Database Write -> oauthredirectlookup:"+args.req.sessionID, "---", args.req.url);
   db.set("oauthredirectlookup:"+args.req.sessionID, args.req.url);
   // User is not authorized so we need to do the authentication step
   // Gets an authoritzation URL for the user to hit..
@@ -88,7 +116,7 @@ exports.authenticate = function(hook_name, args, cb){
   // CAKE TODO -- we use redirect url as state, this seems wrong to me.
   var authURL = oauth2.getAuthorizeUrl({
     redirect_uri: settings.ep_oauth.callbackURL,
-    scope: ['repo', 'user'],
+    scope: ['user'],
     state: args.req.sessionID,
     target: args.req.url
   });
