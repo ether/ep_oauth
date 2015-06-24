@@ -5,6 +5,10 @@ var session = require('ep_etherpad-lite/node_modules/express-session');
 var sessionStore = require('ep_etherpad-lite/node/db/SessionStore');
 var request = require('request');
 
+// Below two lines are not used yet but probably will be at some point
+var PadMessageHandler = require('../../src/node/handler/PadMessageHandler');
+var EPsessions = PadMessageHandler.sessioninfos;
+
 var OAuth2 = require('./node_modules/oauth/lib/oauth2').OAuth2;
 
 // Setup the oauth2 connector -- Doesn't establish any connections etc.
@@ -62,7 +66,7 @@ exports.expressConfigure = function(hook_name, args, cb) {
                 "access_token": access_token,
                 "userInfo": user
               }
-              console.log("Database Write -> ", sessionID, "---", userBlob);
+              console.debug("Database Write -> ", sessionID, "---", userBlob);
               db.set("oauth:"+sessionID, userBlob);
             }else{
               console.error(error, response, body);
@@ -98,7 +102,7 @@ exports.authorize = function(hook_name, args, cb){
   if(args.req.url.indexOf("/auth") === 0) return cb[true];
 
   var userIsAuthedAlready = false;
-  console.log("Database lookup -> oauth:"+args.req.sessionID);
+  console.debug("Database lookup -> oauth:"+args.req.sessionID);
   db.get("oauth:"+args.req.sessionID, function(k, user){
     console.debug("Oauth session found ->" + args.req.sessionID, "has user data of ", user);
     if(user) userIsAuthedAlready = true;
@@ -108,7 +112,7 @@ exports.authorize = function(hook_name, args, cb){
 
 // SECOND STEP
 exports.authenticate = function(hook_name, args, cb){
-  console.log("Database Write -> oauthredirectlookup:"+args.req.sessionID, "---", args.req.url);
+  console.debug("Database Write -> oauthredirectlookup:"+args.req.sessionID, "---", args.req.url);
   db.set("oauthredirectlookup:"+args.req.sessionID, args.req.url);
   // User is not authorized so we need to do the authentication step
   // Gets an authoritzation URL for the user to hit..
