@@ -9,7 +9,7 @@
   },
   "contributors": [],
   "dependencies": {
-    "simple-oauth2":">=0.2.1"
+    "oauth":">=0.9.13"
   },
   "engines": {
     "node": "*"
