@@ -28,7 +28,7 @@ exports.expressConfigure = function(hook_name, args, cb) {
   args.app.use(passport.session());
 
   args.app.get('/auth/github', passport.authenticate('github'));
-  args.app.get('/auth/callback', 
+  args.app.get('/auth/callback',
     passport.authenticate('github', { failureRedirect: '/' }),
     function(req, res) {
       // Successful authentication, redirect home.
@@ -44,7 +44,7 @@ exports.expressConfigure = function(hook_name, args, cb) {
       return;
     }
 
-    
+
     // Don't ask for github auth for static paths etc.
     if (req.path.match(/^\/(static|javascripts|pluginfw|locales|favicon|oauth|auth)/)) {
       // console.log("straight through", req.path);
@@ -55,9 +55,9 @@ exports.expressConfigure = function(hook_name, args, cb) {
 
       if(req.path.indexOf("/p") === 0){
         console.warn("isAuthenticated", req.isAuthenticated()); // Always returns false?!
-        if (req.isAuthenticated()){ 
+        if (req.isAuthenticated()){
           console.warn("is authenticated!");
-          return next(); 
+          return next();
         }else{
           console.warn("passing back to auth as not authenticated");
           res.redirect('/auth/github');
@@ -84,6 +84,6 @@ passport.serializeUser(function(user, done) {
 
 // For some reason this is never fired!
 passport.deserializeUser(function(obj, done) {
-  console.log("deserialized user", user);
+  console.log("deserialized user", obj);
   done(null, obj);
 });
