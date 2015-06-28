@@ -3,7 +3,9 @@
     {
       "name": "ep_oauth",
       "hooks": {
-        "expressConfigure" : "ep_oauth/auth:expressConfigure"
+        "authenticate": "ep_oauth/auth",
+        "authorize" :  "ep_oauth/auth",
+        "expressConfigure" : "ep_oauth/auth"
       }
     }
   ]

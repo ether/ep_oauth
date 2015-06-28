@@ -2,88 +2,134 @@ var db = require('ep_etherpad-lite/node/db/DB').db;
 settings = require('../../src/node/utils/Settings');
 var cookieParser = require('ep_etherpad-lite/node_modules/cookie-parser');
 var session = require('ep_etherpad-lite/node_modules/express-session');
-var passport = require('passport');
-var GitHubStrategy = require('passport-github').Strategy;
+var sessionStore = require('ep_etherpad-lite/node/db/SessionStore');
+var request = require('request');
 
-passport.use(new GitHubStrategy({
-    clientID: settings.ep_oauth.clientID,
-    clientSecret: settings.ep_oauth.clientSecret,
-    callbackURL: settings.ep_oauth.callbackURL
-  },
-  function(accessToken, refreshToken, profile, done) {
-    // asynchronous verification, for effect...
-    process.nextTick(function () {
-      // To keep the example simple, the user's GitHub profile is returned to
-      // represent the logged-in user.  In a typical application, you would want
-      // to associate the GitHub account with a user record in your database,
-      // and return that user instead.
-      console.log("successful auth through Github");
-      return done(null, profile); // profile is properly completed
-    });
-  }
-));
+// Below two lines are not used yet but probably will be at some point
+var PadMessageHandler = require('../../src/node/handler/PadMessageHandler');
+var EPsessions = PadMessageHandler.sessioninfos;
+
+var OAuth2 = require('./node_modules/oauth/lib/oauth2').OAuth2;
+
+// Setup the oauth2 connector -- Doesn't establish any connections etc.
+var oauth2 = new OAuth2(settings.ep_oauth.clientID,
+  settings.ep_oauth.clientSecret,
+  'https://github.com/', 
+  'login/oauth/authorize',
+  'login/oauth/access_token',
+  null); /** Custom headers */
 
 exports.expressConfigure = function(hook_name, args, cb) {
-  args.app.use(passport.initialize());
-  args.app.use(passport.session());
 
-  args.app.get('/auth/github', passport.authenticate('github'));
-  args.app.get('/auth/callback',
-    passport.authenticate('github', { failureRedirect: '/' }),
-    function(req, res) {
-      // Successful authentication, redirect home.
-      console.log("Redirecting back to home after succesful auth");
-      res.redirect('/');
-    }
-  );
+  // args.app.get('/auth/callback', function(req, res){
 
+  // THIRD STEP
   args.app.use(function(req, res, next) {
-    // Root URL doesn't need any Auth..
-    if (req.path === "/"){
-      next();
-      return;
-    }
+    // Oauth2 Provider returns auth code so that access_token can be obtained 
 
-
-    // Don't ask for github auth for static paths etc.
-    if (req.path.match(/^\/(static|javascripts|pluginfw|locales|favicon|oauth|auth)/)) {
-      // console.log("straight through", req.path);
-      next();
-      return;
-    } else {
-      console.log("Trying to access a pad", req.path);
-
-      if(req.path.indexOf("/p") === 0){
-        console.warn("isAuthenticated", req.isAuthenticated()); // Always returns false?!
-        if (req.isAuthenticated()){
-          console.warn("is authenticated!");
-          return next();
-        }else{
-          console.warn("passing back to auth as not authenticated");
-          res.redirect('/auth/github');
+    if(req.url.indexOf("/auth/callback") === 0){
+      console.debug("/auth/callback");
+      oauth2.getOAuthAccessToken(
+      req.query.code,
+      {'redirect_uri': settings.ep_oauth.callbackURL},
+      function (e, access_token, refresh_token, results){
+        if (e) {
+          // General Error
+          console.error(e);
+          res.end(e);
+        } else if (results.error) {
+          // Error in Results
+          console.error("error in results", results);
+          // res.end(JSON.stringify(results));
         }
-      }
+        else {
+          // Everything is all good, we have an access token for this user
+          console.debug('Obtained access_token: ', access_token);
 
+          var sessionID = req.query.state;
+
+          // CAKE TODO
+          // At the moment this is github specific..  This should be more "general.."
+
+          // Getting user details
+          var requestUrl = "https://api.github.com/user?access_token="+access_token;
+          var rOptions = {
+            url: requestUrl,
+            headers: {
+              'User-Agent': 'request'
+            }
+          }
+          request(rOptions, function (error, response, body) {
+            if (!error && response.statusCode == 200) {
+              var user = JSON.parse(body);
+              var userBlob = {
+                "access_token": access_token,
+                "userInfo": user
+              }
+              console.debug("Database Write -> ", sessionID, "---", userBlob);
+              db.set("oauth:"+sessionID, userBlob);
+            }else{
+              console.error(error, response, body);
+            }
+          });
+
+          next(); // Go to final step
+
+        }
+      })
+    }else{
+      next(); // Go to final step
     }
   });
 
+  // FOURTH AND FINAL STEP
+  args.app.get('/auth/callback', function(req, res){
+    // Read redirect lookup URL from database
+    db.get("oauthredirectlookup:"+req.query.state, function(k, url){
+      console.debug("Oauth redirect lookup record found", url);
+      // Send the user to the pad they were trying to access
+      // Note that we could lookup the user data and append it so suggest their name
+      // Or we might lookup this users UID in some form of permission table
+      // Either way we have that data and can get to it by db.get("oauth:"+req.query.state,...
+      res.redirect(url || "/");
+    })
+  });
 }
 
-// Passport session setup.
-//   To support persistent login sessions, Passport needs to be able to
-//   serialize users into and deserialize users out of the session.  Typically,
-//   this will be as simple as storing the user ID when serializing, and finding
-//   the user by ID when deserializing.  However, since this example does not
-//   have a database of user records, the complete GitHub profile is serialized
-//   and deserialized.
-passport.serializeUser(function(user, done) {
-  console.log("serialized user", user);
-  done(null, user);
-});
+// FIRST STEP
+exports.authorize = function(hook_name, args, cb){
+  // Never lands here for url /auth/callback
+  if(args.req.url.indexOf("/auth") === 0) return cb[true];
 
+  var userIsAuthedAlready = false;
+  console.debug("Database lookup -> oauth:"+args.req.sessionID);
+  db.get("oauth:"+args.req.sessionID, function(k, user){
+    console.debug("Oauth session found ->" + args.req.sessionID, "has user data of ", user);
+    if(user) userIsAuthedAlready = true;
+  });
+  return cb([userIsAuthedAlready]);
+}
 
-// For some reason this is never fired!
-passport.deserializeUser(function(obj, done) {
-  console.log("deserialized user", obj);
-  done(null, obj);
-});
+// SECOND STEP
+exports.authenticate = function(hook_name, args, cb){
+  console.debug("Database Write -> oauthredirectlookup:"+args.req.sessionID, "---", args.req.url);
+  db.set("oauthredirectlookup:"+args.req.sessionID, args.req.url);
+  // User is not authorized so we need to do the authentication step
+  // Gets an authoritzation URL for the user to hit..
+
+  // CAKE TODO -- we use redirect url as state, this seems wrong to me.
+  var authURL = oauth2.getAuthorizeUrl({
+    redirect_uri: settings.ep_oauth.callbackURL,
+    scope: ['user'],
+    state: args.req.sessionID,
+    target: args.req.url
+  });
+
+  args.res.redirect(authURL);
+  // CAKE TODO -- This redirect fires a server console error because of when it's fired
+  // It might make more sense to send this redirect as a browser script or so..
+  // Let's see if it causes issues and if it does we can address it then..
+
+  return cb([true]);
+}
+
