@@ -1,14 +1,11 @@
+'use strict';
+
 const db = require('ep_etherpad-lite/node/db/DB').db;
-settings = require('../../src/node/utils/Settings');
-const cookieParser = require('ep_etherpad-lite/node_modules/cookie-parser');
-const session = require('ep_etherpad-lite/node_modules/express-session');
-const sessionStore = require('ep_etherpad-lite/node/db/SessionStore');
+const settings = require('ep_etherpad-lite/node/utils/Settings');
 const request = require('request');
 
 // Below two lines are not used yet but probably will be at some point
-const PadMessageHandler = require('../../src/node/handler/PadMessageHandler');
-const EPsessions = PadMessageHandler.sessioninfos;
-
+/* eslint-disable-next-line node/no-unpublished-require */
 const OAuth2 = require('./node_modules/oauth/lib/oauth2').OAuth2;
 
 // Setup the oauth2 connector -- Doesn't establish any connections etc.
@@ -19,7 +16,7 @@ const oauth2 = new OAuth2(settings.ep_oauth.clientID,
     'login/oauth/access_token',
     null); /** Custom headers */
 
-exports.expressConfigure = function (hook_name, args, cb) {
+exports.expressConfigure = (hookName, args, cb) => {
   // args.app.get('/auth/callback', function(req, res){
 
   // THIRD STEP
@@ -58,7 +55,7 @@ exports.expressConfigure = function (hook_name, args, cb) {
                 },
               };
               request(rOptions, (error, response, body) => {
-                if (!error && response.statusCode == 200) {
+                if (!error && response.statusCode === 200) {
                   const user = JSON.parse(body);
                   const userBlob = {
                     access_token,
@@ -94,7 +91,7 @@ exports.expressConfigure = function (hook_name, args, cb) {
 };
 
 // FIRST STEP
-exports.authorize = function (hook_name, args, cb) {
+exports.authorize = (hookName, args, cb) => {
   // Never lands here for url /auth/callback
   if (args.req.url.indexOf('/auth') === 0) return cb.true;
 
@@ -108,7 +105,7 @@ exports.authorize = function (hook_name, args, cb) {
 };
 
 // SECOND STEP
-exports.authenticate = function (hook_name, args, cb) {
+exports.authenticate = (hookName, args, cb) => {
   console.debug(`Database Write -> oauthredirectlookup:${args.req.sessionID}`, '---', args.req.url);
   db.set(`oauthredirectlookup:${args.req.sessionID}`, args.req.url);
   // User is not authorized so we need to do the authentication step

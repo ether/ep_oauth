@@ -13,7 +13,7 @@
     "request": ">=2.58.0"
   },
   "engines": {
-    "node": "*"
+    "node": ">=10.17.0"
   },
   "repository": {
     "type": "git",
