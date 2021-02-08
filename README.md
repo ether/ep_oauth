@@ -1,3 +1,5 @@
+![Publish Status](https://github.com/ether/ep_oauth/workflows/Node.js%20Package/badge.svg) ![Backend Tests Status](https://github.com/ether/ep_oauth/workflows/Backend%20tests/badge.svg)
+
 Example config to be placed in settings.json
 ```
   "ep_oauth":{
