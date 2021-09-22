@@ -6,7 +6,7 @@ const request = require('request');
 
 // Below two lines are not used yet but probably will be at some point
 /* eslint-disable-next-line node/no-unpublished-require */
-const OAuth2 = require('./node_modules/oauth/lib/oauth2').OAuth2;
+const OAuth2 = require('oauth').OAuth2;
 
 // Setup the oauth2 connector -- Doesn't establish any connections etc.
 const oauth2 = new OAuth2(settings.ep_oauth.clientID,
