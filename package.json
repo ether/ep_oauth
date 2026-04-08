@@ -1,7 +1,7 @@
 {
   "name": "ep_oauth",
   "description": "Oauth2 authentication for Etherpad",
-  "version": "11.0.0",
+  "version": "11.0.1",
   "author": {
     "name": "John McLear",
     "email": "john@mclear.co.uk",
@@ -33,4 +33,3 @@
     "lint:fix": "eslint --fix ."
   }
 }
-
