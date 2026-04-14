@@ -1,14 +1,25 @@
-![Publish Status](https://github.com/ether/ep_oauth/workflows/Node.js%20Package/badge.svg) [![Backend Tests Status](https://github.com/ether/ep_oauth/actions/workflows/test-and-release.yml/badge.svg)](https://github.com/ether/ep_oauth/actions/workflows/test-and-release.yml)
+# ep_oauth
 
-Example config to be placed in settings.json
+OAuth2 authentication for Etherpad via GitHub.
+
+## Install
+
 ```
-  "ep_oauth":{
-    "clientID": "9829038409234fuckingnumbersandl1e1tt1er1s111yo",
-    "clientSecret": "herpderp22",
-    "callbackURL": "http://etherpoop.com:9001/auth/callback"
-  }
+pnpm run plugins i ep_oauth
 ```
 
-Note that we currently only support Github, we need better logic for events to fire after succesful Auth IE what user data to grab
+## Settings
 
+Add to your `settings.json`:
 
+```json
+"ep_oauth": {
+  "clientID": "your_github_client_id",
+  "clientSecret": "your_github_client_secret",
+  "callbackURL": "https://your-etherpad.example.com/auth/callback"
+}
+```
+
+## License
+
+Apache-2.0
