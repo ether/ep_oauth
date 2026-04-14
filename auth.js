@@ -93,15 +93,13 @@ exports.expressConfigure = (hookName, args, cb) => {
 // FIRST STEP
 exports.authorize = (hookName, args, cb) => {
   // Never lands here for url /auth/callback
-  if (args.req.url.indexOf('/auth') === 0) return cb.true;
+  if (args.req.url.indexOf('/auth') === 0) return cb([true]);
 
-  let userIsAuthedAlready = false;
   console.debug(`Database lookup -> oauth:${args.req.sessionID}`);
   db.get(`oauth:${args.req.sessionID}`, (k, user) => {
     console.debug(`Oauth session found ->${args.req.sessionID}`, 'has user data of ', user);
-    if (user) userIsAuthedAlready = true;
+    return cb([!!user]);
   });
-  return cb([userIsAuthedAlready]);
 };
 
 // SECOND STEP
