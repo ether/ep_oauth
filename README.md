@@ -1,4 +1,4 @@
-# ep_oauth
+# OAuth2 Authentication for Etherpad
 
 OAuth2 authentication for Etherpad via GitHub.
 
