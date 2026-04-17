@@ -8,15 +8,29 @@ const request = require('request');
 /* eslint-disable-next-line node/no-unpublished-require */
 const OAuth2 = require('oauth').OAuth2;
 
-// Setup the oauth2 connector -- Doesn't establish any connections etc.
-const oauth2 = new OAuth2(settings.ep_oauth.clientID,
-    settings.ep_oauth.clientSecret,
-    'https://github.com/',
-    'login/oauth/authorize',
-    'login/oauth/access_token',
-    null); /** Custom headers */
+// If the plugin is installed but the operator hasn't added the
+// `ep_oauth` block to settings.json yet, reading `.clientID` on an
+// undefined object used to crash Etherpad at startup with a cryptic
+// "Cannot read properties of undefined" (that's what produced the "can't
+// access site" report in #63). Bail cleanly with a warning instead so
+// Etherpad keeps running; the plugin's hooks self-disable when the
+// client isn't configured.
+let oauth2 = null;
+if (settings.ep_oauth && settings.ep_oauth.clientID && settings.ep_oauth.clientSecret) {
+  // Setup the oauth2 connector -- Doesn't establish any connections etc.
+  oauth2 = new OAuth2(settings.ep_oauth.clientID,
+      settings.ep_oauth.clientSecret,
+      'https://github.com/',
+      'login/oauth/authorize',
+      'login/oauth/access_token',
+      null); /** Custom headers */
+} else {
+  console.warn(
+      'ep_oauth: missing settings.ep_oauth.clientID / clientSecret — plugin disabled');
+}
 
 exports.expressConfigure = (hookName, args, cb) => {
+  if (!oauth2) return cb && cb();
   // args.app.get('/auth/callback', function(req, res){
 
   // THIRD STEP
@@ -92,6 +106,7 @@ exports.expressConfigure = (hookName, args, cb) => {
 
 // FIRST STEP
 exports.authorize = (hookName, args, cb) => {
+  if (!oauth2) return cb([true]); // plugin disabled, don't block the request
   // Never lands here for url /auth/callback
   if (args.req.url.indexOf('/auth') === 0) return cb([true]);
 
@@ -104,6 +119,7 @@ exports.authorize = (hookName, args, cb) => {
 
 // SECOND STEP
 exports.authenticate = (hookName, args, cb) => {
+  if (!oauth2) return cb([]); // plugin disabled, defer to other auth plugins
   console.debug(`Database Write -> oauthredirectlookup:${args.req.sessionID}`, '---', args.req.url);
   db.set(`oauthredirectlookup:${args.req.sessionID}`, args.req.url);
   // User is not authorized so we need to do the authentication step
