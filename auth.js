@@ -1,6 +1,6 @@
 'use strict';
 
-const db = require('ep_etherpad-lite/node/db/DB').db;
+const db = require('ep_etherpad-lite/node/db/DB');
 const settings = require('ep_etherpad-lite/node/utils/Settings');
 const request = require('request');
 
@@ -76,7 +76,11 @@ exports.expressConfigure = (hookName, args, cb) => {
                     userInfo: user,
                   };
                   console.debug('Database Write -> ', sessionID, '---', userBlob);
-                  db.set(`oauth:${sessionID}`, userBlob);
+                  // ueberdb2 v6 is promise-only; await so a failure surfaces
+                  // instead of producing an unhandled rejection.
+                  db.set(`oauth:${sessionID}`, userBlob).catch((err) => {
+                    console.error('ep_oauth db.set failed:', err);
+                  });
                 } else {
                   console.error(error, response, body);
                 }
@@ -91,37 +95,53 @@ exports.expressConfigure = (hookName, args, cb) => {
   });
 
   // FOURTH AND FINAL STEP
-  args.app.get('/auth/callback', (req, res) => {
+  args.app.get('/auth/callback', async (req, res) => {
     // Read redirect lookup URL from database
-    db.get(`oauthredirectlookup:${req.query.state}`, (k, url) => {
-      console.debug('Oauth redirect lookup record found', url);
-      // Send the user to the pad they were trying to access
-      // Note that we could lookup the user data and append it so suggest their name
-      // Or we might lookup this users UID in some form of permission table
-      // Either way we have that data and can get to it by db.get("oauth:"+req.query.state,...
-      res.redirect(url || '/');
-    });
+    // ueberdb2 v6 is promise-only; the legacy db.get(key, cb) callback
+    // never fires, which previously hung this endpoint forever.
+    let url;
+    try {
+      url = await db.get(`oauthredirectlookup:${req.query.state}`);
+    } catch (err) {
+      console.error('ep_oauth /auth/callback db.get failed:', err);
+    }
+    console.debug('Oauth redirect lookup record found', url);
+    // Send the user to the pad they were trying to access
+    // Note that we could lookup the user data and append it so suggest their name
+    // Or we might lookup this users UID in some form of permission table
+    res.redirect(url || '/');
   });
 };
 
 // FIRST STEP
-exports.authorize = (hookName, args, cb) => {
+exports.authorize = async (hookName, args, cb) => {
   if (!oauth2) return cb([true]); // plugin disabled, don't block the request
   // Never lands here for url /auth/callback
   if (args.req.url.indexOf('/auth') === 0) return cb([true]);
 
   console.debug(`Database lookup -> oauth:${args.req.sessionID}`);
-  db.get(`oauth:${args.req.sessionID}`, (k, user) => {
-    console.debug(`Oauth session found ->${args.req.sessionID}`, 'has user data of ', user);
-    return cb([!!user]);
-  });
+  // ueberdb2 v6 is promise-only; await directly rather than relying on the
+  // legacy callback signature (which never fires under v6 and previously
+  // hung every authorize check, blocking the request pipeline).
+  let user;
+  try {
+    user = await db.get(`oauth:${args.req.sessionID}`);
+  } catch (err) {
+    console.error('ep_oauth authorize db.get failed:', err);
+  }
+  console.debug(`Oauth session found ->${args.req.sessionID}`, 'has user data of ', user);
+  return cb([!!user]);
 };
 
 // SECOND STEP
-exports.authenticate = (hookName, args, cb) => {
+exports.authenticate = async (hookName, args, cb) => {
   if (!oauth2) return cb([]); // plugin disabled, defer to other auth plugins
   console.debug(`Database Write -> oauthredirectlookup:${args.req.sessionID}`, '---', args.req.url);
-  db.set(`oauthredirectlookup:${args.req.sessionID}`, args.req.url);
+  try {
+    await db.set(`oauthredirectlookup:${args.req.sessionID}`, args.req.url);
+  } catch (err) {
+    console.error('ep_oauth authenticate db.set failed:', err);
+  }
   // User is not authorized so we need to do the authentication step
   // Gets an authoritzation URL for the user to hit..
 
