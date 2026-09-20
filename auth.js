@@ -4,8 +4,7 @@ const db = require('ep_etherpad-lite/node/db/DB');
 const settings = require('ep_etherpad-lite/node/utils/Settings');
 const request = require('request');
 
-// Below two lines are not used yet but probably will be at some point
-/* eslint-disable-next-line node/no-unpublished-require */
+// Not used yet but probably will be at some point
 const OAuth2 = require('oauth').OAuth2;
 
 // If the plugin is installed but the operator hasn't added the
