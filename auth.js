@@ -2,7 +2,6 @@
 
 const db = require('ep_etherpad-lite/node/db/DB');
 const settings = require('ep_etherpad-lite/node/utils/Settings');
-const request = require('request');
 
 // Not used yet but probably will be at some point
 const OAuth2 = require('oauth').OAuth2;
@@ -59,17 +58,30 @@ exports.expressConfigure = (hookName, args, cb) => {
               // CAKE TODO
               // At the moment this is github specific..  This should be more "general.."
 
-              // Getting user details
-              const requestUrl = `https://api.github.com/user?access_token=${access_token}`;
-              const rOptions = {
-                url: requestUrl,
-                headers: {
-                  'User-Agent': 'request',
-                },
-              };
-              request(rOptions, (error, response, body) => {
-                if (!error && response.statusCode === 200) {
-                  const user = JSON.parse(body);
+              // Getting user details. Uses the global fetch built into
+              // Node (this plugin requires Node >= 22) rather than the
+              // deprecated `request` package, which has been unmaintained
+              // since 2020 and pulls in vulnerable versions of form-data,
+              // tough-cookie, qs and uuid that have no upgrade path.
+              //
+              // The token goes in the Authorization header: GitHub removed
+              // support for `?access_token=` in 2021, and a query parameter
+              // leaks the credential into proxy and server logs.
+              void (async () => {
+                try {
+                  const response = await fetch('https://api.github.com/user', {
+                    headers: {
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': `Bearer ${access_token}`,
+                      'User-Agent': 'ep_oauth',
+                    },
+                  });
+                  if (!response.ok) {
+                    console.error('ep_oauth: GitHub user lookup failed:',
+                        response.status, await response.text());
+                    return;
+                  }
+                  const user = await response.json();
                   const userBlob = {
                     access_token,
                     userInfo: user,
@@ -77,13 +89,11 @@ exports.expressConfigure = (hookName, args, cb) => {
                   console.debug('Database Write -> ', sessionID, '---', userBlob);
                   // ueberdb2 v6 is promise-only; await so a failure surfaces
                   // instead of producing an unhandled rejection.
-                  db.set(`oauth:${sessionID}`, userBlob).catch((err) => {
-                    console.error('ep_oauth db.set failed:', err);
-                  });
-                } else {
-                  console.error(error, response, body);
+                  await db.set(`oauth:${sessionID}`, userBlob);
+                } catch (err) {
+                  console.error('ep_oauth: GitHub user lookup failed:', err);
                 }
-              });
+              })();
 
               next(); // Go to final step
             }
