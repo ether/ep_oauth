@@ -31,12 +31,36 @@ const loadMiddleware = () => {
   return middleware;
 };
 
+// The middleware deliberately calls next() without waiting for the user
+// lookup, so a test cannot simply await the middleware: it has to wait for the
+// lookup itself to finish. Rather than sleep for a fixed interval (which is
+// timing-dependent and flakes on a loaded runner), each test waits on a signal
+// that the lookup has actually settled -- the database write on the success
+// path, and the error log on the two failure paths.
 const runCallback = async (middleware: any, sessionID: string) => {
   const req = {url: `/auth/callback?code=abc&state=${sessionID}`, query: {code: 'abc', state: sessionID}};
   await new Promise<void>((resolve) => middleware(req, {}, resolve));
-  // The middleware calls next() without waiting for the lookup, so give the
-  // fetch/db promise chain a turn to settle.
-  await new Promise((resolve) => setTimeout(resolve, 100));
+};
+
+// Polls until `fn` returns something non-null, or gives up after `timeoutMs`.
+const waitFor = async (fn: () => Promise<any>, timeoutMs = 10000) => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await fn();
+    if (value != null) return value;
+    if (Date.now() > deadline) return null;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
+// Resolves the first time console.error is called, so the failure paths (which
+// end in a log and no database write) can be awaited deterministically.
+const captureErrorLog = () => {
+  const orig = console.error;
+  let resolveLogged: (args: any[]) => void;
+  const logged = new Promise<any[]>((resolve) => { resolveLogged = resolve; });
+  console.error = (...args: any[]) => { resolveLogged(args); };
+  return {logged, restore: () => { console.error = orig; }};
 };
 
 describe('ep_oauth GitHub user lookup', function () {
@@ -81,6 +105,7 @@ describe('ep_oauth GitHub user lookup', function () {
     }) as any;
 
     await runCallback(loadMiddleware(), 'session-header');
+    await waitFor(async () => (fetchCalls.length ? fetchCalls.length : null));
 
     assert.equal(fetchCalls.length, 1);
     const {url, opts} = fetchCalls[0];
@@ -99,7 +124,7 @@ describe('ep_oauth GitHub user lookup', function () {
 
     await runCallback(loadMiddleware(), 'session-success');
 
-    const stored = await db.get('oauth:session-success');
+    const stored = await waitFor(async () => await db.get('oauth:session-success'));
     assert.ok(stored, 'nothing was written to the database');
     assert.equal(stored.access_token, ACCESS_TOKEN);
     assert.equal(stored.userInfo.login, 'octocat');
@@ -112,7 +137,13 @@ describe('ep_oauth GitHub user lookup', function () {
       text: async () => 'Bad credentials',
     })) as any;
 
-    await runCallback(loadMiddleware(), 'session-failure');
+    const {logged, restore} = captureErrorLog();
+    try {
+      await runCallback(loadMiddleware(), 'session-failure');
+      await logged;
+    } finally {
+      restore();
+    }
 
     assert.ok(await db.get('oauth:session-failure') == null, 'a rejected token was stored');
   });
@@ -120,7 +151,13 @@ describe('ep_oauth GitHub user lookup', function () {
   it('writes nothing when the request itself fails', async function () {
     globalThis.fetch = (async () => { throw new Error('ECONNREFUSED'); }) as any;
 
-    await runCallback(loadMiddleware(), 'session-error');
+    const {logged, restore} = captureErrorLog();
+    try {
+      await runCallback(loadMiddleware(), 'session-error');
+      await logged;
+    } finally {
+      restore();
+    }
 
     assert.ok(await db.get('oauth:session-error') == null, 'a failed lookup was stored');
   });
